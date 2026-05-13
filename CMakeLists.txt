@@ -14,6 +14,14 @@ set(dependencies
   rclcpp_action
   rclcpp_components
   rclcpp_lifecycle
+  nav2_util
+  nav_util
+  std_msgs
+  nav_msgs
+  geometry_msgs
+  lifecycle_msgs
+  nav_interfaces
+  angles
 )
 
 find_package(ament_cmake REQUIRED)
