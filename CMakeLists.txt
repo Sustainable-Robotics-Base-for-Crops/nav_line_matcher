@@ -21,8 +21,7 @@ set(dependencies
   geometry_msgs
   lifecycle_msgs
   nav_interfaces
-  angles
-)
+  angles)
 
 find_package(ament_cmake REQUIRED)
 foreach(dep ${dependencies})
