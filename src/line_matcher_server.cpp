@@ -70,6 +70,8 @@ LNI::CallbackReturn LineMatcherServer::on_deactivate(const rclcpp_lifecycle::Sta
 
 LNI::CallbackReturn LineMatcherServer::on_cleanup(const rclcpp_lifecycle::State&)
 {
+  parameters_client_.reset();
+  parameter_event_sub_.reset();
   action_server_.reset();
 
   odom_pub_.reset();
@@ -82,6 +84,8 @@ LNI::CallbackReturn LineMatcherServer::on_cleanup(const rclcpp_lifecycle::State&
 
 LNI::CallbackReturn LineMatcherServer::on_shutdown(const rclcpp_lifecycle::State&)
 {
+  parameters_client_.reset();
+  parameter_event_sub_.reset();
   action_server_.reset();
 
   odom_pub_.reset();
