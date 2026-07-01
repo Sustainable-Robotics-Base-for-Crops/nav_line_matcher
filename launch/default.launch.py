@@ -1,7 +1,7 @@
 import launch
-from launch.actions import GroupAction
+from launch.actions import GroupAction, IncludeLaunchDescription
 from launch.substitutions import PathJoinSubstitution
-from launch_ros.actions import Node, ComposableNodeContainer, PushRosNamespace
+from launch_ros.actions import ComposableNodeContainer, PushRosNamespace
 from launch_ros.descriptions import ComposableNode
 from launch_ros.substitutions import FindPackageShare
 
@@ -17,8 +17,6 @@ def generate_launch_description():
         [matcher_package_dir, 'config', 'default.yaml'])
     follower_yaml_path = PathJoinSubstitution(
         [follower_package_dir, 'config', 'default.yaml'])
-    arbitration_yaml_path = PathJoinSubstitution(
-        [arbitration_package_dir, 'config', 'default.yaml'])
 
     container = ComposableNodeContainer(
         name='nav_line_matcher_container',
@@ -45,13 +43,7 @@ def generate_launch_description():
         container
     ])
 
-    arbitration = Node(
-        package='nav_arbitration',
-        namespace='',
-        executable='nav_arbitration',
-        name='arbitration',
-        parameters=[arbitration_yaml_path],
-        output='screen'
-    )
+    arbitration = IncludeLaunchDescription(PathJoinSubstitution(
+        [arbitration_package_dir, 'launch', 'default.launch.py']))
 
     return launch.LaunchDescription([container_with_ns, arbitration])
