@@ -12,9 +12,11 @@ On each control cycle (rate `control_looprate`):
 2. Project the robot onto the line `[point_begin, point_end]` (or a dynamic end point).
 3. Compute lateral deviation, course deviation, and distances to segment ends.
 4. Publish action feedback; if errors are within limits, publish `odom` for path following.
-5. Succeed when the end of the segment is reached (distance or segment overrun).
+5. Succeed when the segment end is reached (distance, segment overrun, or cut-line crossing).
 
 Goals can be **static** (`point_end` fixed in the goal) or **dynamic** (`is_dynamic`: end point updated live via `line_matcher/_action/update_goal`).
+
+When `end_on_cut_line_cross` is set and `cut_line_a` ≠ `cut_line_b`, the goal also succeeds once the robot crosses the cut line (signed lateral deviation flips past `cut_line_overshoot`).
 
 ## Action interface
 
@@ -22,12 +24,16 @@ Defined in `nav_interfaces/action/LineMatcher.action`.
 
 **Goal**
 
-| Field             | Description                                                              |
-| ----------------- | ------------------------------------------------------------------------ |
-| `point_begin`     | Start of the line segment                                                |
-| `point_end`       | End of the segment (static goals)                                        |
-| `is_dynamic`      | If true, use `dynamic_point_end` updated by topic instead of `point_end` |
-| `is_working_zone` | Reserved in the message definition; **not used** by the server yet       |
+| Field                   | Description                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `point_begin`           | Start of the line segment                                                                        |
+| `point_end`             | End of the segment (static goals)                                                                |
+| `is_dynamic`            | If true, use `dynamic_point_end` updated by topic instead of `point_end`                         |
+| `is_working_zone`       | Per-segment working-zone flags; index `0` is forwarded in feedback and `odom.twist.linear.z`     |
+| `is_uturn`              | If true, use `lateral_deviation_max.uturn` instead of `lateral_deviation_max` for error checking |
+| `cut_line_a`            | First point of the optional cut line (used when `end_on_cut_line_cross` is true)                 |
+| `cut_line_b`            | Second point of the optional cut line                                                            |
+| `end_on_cut_line_cross` | If true, succeed when the robot crosses `[cut_line_a, cut_line_b]`                               |
 
 **Result**
 
@@ -38,14 +44,14 @@ Defined in `nav_interfaces/action/LineMatcher.action`.
 
 **Feedback** (published every control cycle)
 
-| Field                | Description                                                |
-| -------------------- | ---------------------------------------------------------- |
-| `status`             | Error flags (lateral/course deviation, etc.)               |
-| `distance_to_end`    | Distance along the line to the end                         |
-| `distance_to_begin`  | Distance along the line to the start                       |
-| `lateral_deviation`  | Signed lateral error (m)                                   |
-| `course_deviation`   | Signed heading error (rad)                                 |
-| `is_in_working_zone` | Defined in the action; **not populated** by the server yet |
+| Field                | Description                                              |
+| -------------------- | -------------------------------------------------------- |
+| `status`             | Error flags (lateral/course deviation, etc.)             |
+| `distance_to_end`    | Distance along the line to the end                       |
+| `distance_to_begin`  | Distance along the line to the start                     |
+| `lateral_deviation`  | Signed lateral error (m)                                 |
+| `course_deviation`   | Signed heading error (rad)                               |
+| `is_in_working_zone` | `is_working_zone[0]` from the goal (or `false` if empty) |
 
 On excessive lateral or course error, the server sets the corresponding `error_loc_path_*` status bit, **stops publishing `odom`**, and may terminate the goal if still active.
 
@@ -62,12 +68,15 @@ On excessive lateral or course error, the server sets the corresponding `error_l
 
 Loaded at configure time via `AsyncParametersClient`; updates are applied on parameter events.
 
-| Parameter               | Default (header) | Description                            |
-| ----------------------- | ---------------- | -------------------------------------- |
-| `lateral_deviation_max` | `0.4` (m)        | Max \|lateral deviation\| before error |
-| `course_deviation_max`  | `π/8` (rad)      | Max \|course deviation\| before error  |
+| Parameter                     | Default (header) | Description                                    |
+| ----------------------------- | ---------------- | ---------------------------------------------- |
+| `lateral_deviation_max`       | `0.4` (m)        | Max \|lateral deviation\| before error         |
+| `lateral_deviation_max.uturn` | `1.5` (m)        | Max \|lateral deviation\| when `goal.is_uturn` |
+| `course_deviation_max`        | `π/8` (rad)      | Max \|course deviation\| before error          |
 
 End-of-segment distance threshold: `zone_precision = lateral_deviation_max × zone_precision_multiplier`.
+
+Cut-line crossing overshoot: `cut_line_overshoot = 0.05` m (hardcoded in the server).
 
 Configure fails if `/auto/arbitration` is not available.
 
@@ -84,11 +93,11 @@ Configure fails if `/auto/arbitration` is not available.
 
 Fields reused for line-tracking errors (see also `nav_path_follow` README):
 
-| Field                   | Value in this node                                                                           |
-| ----------------------- | -------------------------------------------------------------------------------------------- |
-| `pose.pose.position.y`  | Lateral deviation (m)                                                                        |
-| `pose.pose.orientation` | Course deviation as yaw quaternion                                                           |
-| `twist.twist.angular.x` | `0` (line curvature)                                                                         |
-| `twist.twist.angular.y` | `0` (future curvature, unused for lines)                                                     |
-| `twist.twist.angular.z` | Robot angular velocity from `/loc/odom`                                                      |
-| `twist.twist.linear.z`  | **Not set** (defaults to `0`); `nav_path_follow` uses this as a working-zone flag when `> 0` |
+| Field                   | Value in this node                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| `pose.pose.position.y`  | Lateral deviation (m)                                                                     |
+| `pose.pose.orientation` | Course deviation as yaw quaternion                                                        |
+| `twist.twist.angular.x` | `0` (line curvature)                                                                      |
+| `twist.twist.angular.y` | `0` (future curvature, unused for lines)                                                  |
+| `twist.twist.angular.z` | Robot angular velocity from `/loc/odom`                                                   |
+| `twist.twist.linear.z`  | `is_working_zone[0]` from the goal (or `0` if empty); used by `nav_path_follow` as a flag |
