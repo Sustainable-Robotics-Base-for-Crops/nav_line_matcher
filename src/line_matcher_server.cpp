@@ -36,64 +36,97 @@ LNI::CallbackReturn LineMatcherServer::on_configure(const rclcpp_lifecycle::Stat
 
   odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
 
-  return LNI::CallbackReturn::SUCCESS;
-}
-
-LNI::CallbackReturn LineMatcherServer::on_activate(const rclcpp_lifecycle::State& state)
-{
-  LifecycleNode::on_activate(state);
-
-  odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "/loc/odom", 10, std::bind(&LineMatcherServer::odom_callback, this, _1));
-  odom_update_goal_sub_ =
-      this->create_subscription<nav_msgs::msg::Odometry>(server_name_ + "/_action/update_goal", rclcpp::QoS(1),
-                                                         std::bind(&LineMatcherServer::update_goal_callback, this, _1));
-  reset_dynamic_point_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      server_name_ + "/_action/reset_dynamic_goal", rclcpp::QoS(1),
-      std::bind(&LineMatcherServer::reset_dynamic_point_callback, this, _1));
-
   action_server_ = std::make_unique<nav2_util::SimpleActionServer<LineMatcherAction>>(
       this, server_name_, std::bind(&LineMatcherServer::execute_callback, this), nullptr,
       std::chrono::milliseconds(500), true);
+
+  odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
+      "/loc/odom", 10, std::bind(&LineMatcherServer::odom_callback, this, _1));
+
+  odom_update_goal_sub_ =
+      this->create_subscription<nav_msgs::msg::Odometry>(server_name_ + "/_action/update_goal", rclcpp::QoS(1),
+                                                         std::bind(&LineMatcherServer::update_goal_callback, this, _1));
+
+  reset_dynamic_goal_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+      server_name_ + "/_action/reset_dynamic_goal", rclcpp::QoS(1),
+      std::bind(&LineMatcherServer::reset_dynamic_goal_callback, this, _1));
 
   action_server_->activate();
 
   return LNI::CallbackReturn::SUCCESS;
 }
 
+LNI::CallbackReturn LineMatcherServer::on_activate(const rclcpp_lifecycle::State& state)
+{
+  LifecycleNode::on_activate(state);
+  return LNI::CallbackReturn::SUCCESS;
+}
+
 LNI::CallbackReturn LineMatcherServer::on_deactivate(const rclcpp_lifecycle::State& state)
 {
   LifecycleNode::on_deactivate(state);
-  action_server_->deactivate();
   return LNI::CallbackReturn::SUCCESS;
 }
 
 LNI::CallbackReturn LineMatcherServer::on_cleanup(const rclcpp_lifecycle::State&)
 {
+  action_server_->deactivate();
+  action_server_.reset();
+
   parameters_client_.reset();
   parameter_event_sub_.reset();
-  action_server_.reset();
 
   odom_pub_.reset();
   odom_sub_.reset();
   odom_update_goal_sub_.reset();
-  reset_dynamic_point_sub_.reset();
+  reset_dynamic_goal_sub_.reset();
 
   return LNI::CallbackReturn::SUCCESS;
 }
 
 LNI::CallbackReturn LineMatcherServer::on_shutdown(const rclcpp_lifecycle::State&)
 {
+  action_server_.reset();
+
   parameters_client_.reset();
   parameter_event_sub_.reset();
-  action_server_.reset();
 
   odom_pub_.reset();
   odom_sub_.reset();
   odom_update_goal_sub_.reset();
-  reset_dynamic_point_sub_.reset();
+  reset_dynamic_goal_sub_.reset();
 
   return LNI::CallbackReturn::SUCCESS;
+}
+
+void LineMatcherServer::parameters_handle(const rcl_interfaces::msg::Parameter& parameter)
+{
+  if (parameter.name == "lateral_deviation_max")
+  {
+    lateral_deviation_max_ = parameter.value.double_value;
+    zone_precision_ = lateral_deviation_max_ * zone_precision_multiplier_;
+  }
+  else if (parameter.name == "lateral_deviation_max.uturn")
+  {
+    lateral_deviation_max_uturn_ = parameter.value.double_value;
+  }
+  else if (parameter.name == "course_deviation_max")
+  {
+    course_deviation_max_ = parameter.value.double_value;
+  }
+}
+
+void LineMatcherServer::parameters_callback(rcl_interfaces::msg::ParameterEvent::UniquePtr event)
+{
+  for (auto& new_parameter : event->new_parameters)
+  {
+    parameters_handle(new_parameter);
+  }
+
+  for (auto& changed_parameter : event->changed_parameters)
+  {
+    parameters_handle(changed_parameter);
+  }
 }
 
 bool LineMatcherServer::compute_command(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
@@ -112,12 +145,27 @@ bool LineMatcherServer::compute_command(const std::shared_ptr<const LineMatcherA
   update_distance_to_begin(goal->point_begin, point_end);
   compute_error_on_line(odom_msg, goal->point_begin, point_end);
 
-  if (abs(lateral_deviation_) > lateral_deviation_max_)
+  if (!goal->is_working_zone.empty())
+  {
+    feedback->is_in_working_zone = goal->is_working_zone[0];
+    odom_msg.twist.twist.linear.z = goal->is_working_zone[0];
+  }
+  else
+  {
+    feedback->is_in_working_zone = false;
+    odom_msg.twist.twist.linear.z = 0.0;
+  }
+
+  const double active_lateral_deviation_max = goal->is_uturn ? lateral_deviation_max_uturn_ : lateral_deviation_max_;
+  if (abs(lateral_deviation_) > active_lateral_deviation_max)
   {
     feedback->status |= uint64_t(nav_interfaces::AutoStatus::error_loc_path_lateral_deviation);
+
     RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), clock_, 5000,
-                                "lateral deviation > lateral deviation max : abs(" << lateral_deviation_ << ") > "
-                                                                                   << lateral_deviation_max_);
+                                "lateral deviation > lateral deviation max : abs("
+                                    << lateral_deviation_ << ") > " << active_lateral_deviation_max
+                                    << (goal->is_uturn ? " (uturn threshold)" : ""));
+
     if (is_terminate_goal(feedback->status))
     {
       return false;
@@ -126,9 +174,11 @@ bool LineMatcherServer::compute_command(const std::shared_ptr<const LineMatcherA
   else if (abs(course_deviation_) > course_deviation_max_)
   {
     feedback->status |= uint64_t(nav_interfaces::AutoStatus::error_loc_path_course_deviation);
+
     RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), clock_, 5000,
                                 "course deviation > course deviation max : abs(" << course_deviation_ << ") > "
                                                                                  << course_deviation_max_);
+
     if (is_terminate_goal(feedback->status))
     {
       return false;
@@ -144,6 +194,7 @@ bool LineMatcherServer::compute_command(const std::shared_ptr<const LineMatcherA
   feedback->course_deviation = course_deviation_;
   feedback->lateral_deviation = lateral_deviation_;
   action_server_->publish_feedback(feedback);
+
   return true;
 }
 
@@ -176,19 +227,6 @@ void LineMatcherServer::update_distance_to_finish(const geometry_msgs::msg::Poin
   distance_to_end_ = nav_util::get_distance_to_point(projected_point, point_end);
 }
 
-bool LineMatcherServer::current_goal_reached(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
-                                             const geometry_msgs::msg::Point& point_end)
-{
-  update_distance_to_finish(goal->point_begin, point_end);
-  // Check if close to end or loc goes beyond the end
-  if (distance_to_end_ < zone_precision_ ||
-      nav_util::is_end_segment_exceeded(actual_position_, goal->point_begin, point_end))
-  {
-    return true;
-  }
-  return false;
-}
-
 bool LineMatcherServer::is_terminate_goal(const uint64_t feedback_status)
 {
   if (get_current_state().id() == lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE)
@@ -199,7 +237,56 @@ bool LineMatcherServer::is_terminate_goal(const uint64_t feedback_status)
     action_server_->terminate_all(result);
     return true;
   }
+
   return false;
+}
+
+bool LineMatcherServer::current_goal_reached(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
+                                             const geometry_msgs::msg::Point& point_end)
+{
+  update_distance_to_finish(goal->point_begin, point_end);
+
+  if (goal->end_on_cut_line_cross && !nav_util::is_same_point(goal->cut_line_a, goal->cut_line_b))
+  {
+    double signed_dev = nav_util::get_lateral_deviation_to_line(actual_position_, goal->cut_line_a, goal->cut_line_b);
+    if (cut_line_initial_sign_ != 0. && signed_dev * cut_line_initial_sign_ <= -cut_line_overshoot_)
+    {
+      return true;
+    }
+  }
+
+  // Check if close to end or loc goes beyond the end
+  if (distance_to_end_ < zone_precision_ ||
+      nav_util::is_end_segment_exceeded(actual_position_, goal->point_begin, point_end))
+  {
+    return true;
+  }
+
+  return false;
+}
+
+void LineMatcherServer::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+  std::scoped_lock<std::mutex> lock(mutex_);
+  current_odom_ = *msg;
+  actual_position_.x = msg->pose.pose.position.x;
+  actual_position_.y = msg->pose.pose.position.y;
+  nav_util::quaternion_to_yaw(msg->pose.pose.orientation, actual_course_);
+}
+
+void LineMatcherServer::update_goal_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+  std::scoped_lock<std::mutex> lock(mutex_);
+  dynamic_point_end_ = msg->pose.pose.position;
+}
+
+void LineMatcherServer::reset_dynamic_goal_callback(const std_msgs::msg::Bool::SharedPtr msg)
+{
+  if (msg->data == true)
+  {
+    std::scoped_lock<std::mutex> lock(mutex_);
+    dynamic_point_end_ = geometry_msgs::msg::Point();
+  }
 }
 
 void LineMatcherServer::execute_callback()
@@ -207,6 +294,14 @@ void LineMatcherServer::execute_callback()
   RCLCPP_INFO(this->get_logger(), "Execute goal...");
   std::shared_ptr<const LineMatcherAction::Goal> goal = action_server_->get_current_goal();
   std::shared_ptr<LineMatcherAction::Result> result = std::make_shared<LineMatcherAction::Result>();
+
+  cut_line_initial_sign_ = 0.;
+  if (goal->end_on_cut_line_cross && !nav_util::is_same_point(goal->cut_line_a, goal->cut_line_b))
+  {
+    std::scoped_lock<std::mutex> lock(mutex_);
+    double signed_dev = nav_util::get_lateral_deviation_to_line(actual_position_, goal->cut_line_a, goal->cut_line_b);
+    cut_line_initial_sign_ = (signed_dev >= 0.) ? 1. : -1.;
+  }
 
   try
   {
@@ -225,6 +320,7 @@ void LineMatcherServer::execute_callback()
         action_server_->terminate_all();
         return;
       }
+
       if (action_server_->is_preempt_requested())
       {
         RCLCPP_INFO(this->get_logger(), "using new points");
@@ -234,6 +330,7 @@ void LineMatcherServer::execute_callback()
 
       {
         std::scoped_lock<std::mutex> lock(mutex_);
+
         if ((goal->is_dynamic && current_goal_reached(goal, dynamic_point_end_)) ||
             (!goal->is_dynamic && current_goal_reached(goal, goal->point_end)))
         {
@@ -251,6 +348,7 @@ void LineMatcherServer::execute_callback()
         {
           result = compute_command(goal, goal->point_end);
         }
+
         if (result == false)
         {
           return;
@@ -272,58 +370,6 @@ void LineMatcherServer::execute_callback()
   }
 
   action_server_->succeeded_current(result);
-}
-
-void LineMatcherServer::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
-{
-  std::scoped_lock<std::mutex> lock(mutex_);
-  current_odom_ = *msg;
-  actual_position_.x = msg->pose.pose.position.x;
-  actual_position_.y = msg->pose.pose.position.y;
-  nav_util::quaternion_to_yaw(msg->pose.pose.orientation, actual_course_);
-}
-
-void LineMatcherServer::update_goal_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
-{
-  std::scoped_lock<std::mutex> lock(mutex_);
-  dynamic_point_end_ = msg->pose.pose.position;
-}
-
-void LineMatcherServer::reset_dynamic_point_callback(const std_msgs::msg::Bool::SharedPtr msg)
-{
-  if (msg->data == true)
-  {
-    std::scoped_lock<std::mutex> lock(mutex_);
-    // TODO : cleared dynamic point should have nan points or zero points ? Should take care the point is not empty if
-    // using it
-    dynamic_point_end_ = geometry_msgs::msg::Point();
-  }
-}
-
-void LineMatcherServer::parameters_handle(const rcl_interfaces::msg::Parameter& parameter)
-{
-  if (parameter.name == "lateral_deviation_max")
-  {
-    lateral_deviation_max_ = parameter.value.double_value;
-    zone_precision_ = lateral_deviation_max_ * zone_precision_multiplier_;
-  }
-  else if (parameter.name == "course_deviation_max")
-  {
-    course_deviation_max_ = parameter.value.double_value;
-  }
-}
-
-void LineMatcherServer::parameters_callback(rcl_interfaces::msg::ParameterEvent::UniquePtr event)
-{
-  for (auto& new_parameter : event->new_parameters)
-  {
-    parameters_handle(new_parameter);
-  }
-
-  for (auto& changed_parameter : event->changed_parameters)
-  {
-    parameters_handle(changed_parameter);
-  }
 }
 }  // namespace nav_line_matcher
 

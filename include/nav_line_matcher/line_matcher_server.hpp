@@ -43,23 +43,23 @@ public:
   LNI::CallbackReturn on_shutdown(const rclcpp_lifecycle::State& state) override;
 
 protected:
-  bool compute_command(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
-                       const geometry_msgs::msg::Point& point_end);
-  void compute_error_on_line(nav_msgs::msg::Odometry& msg, const geometry_msgs::msg::Point& point_a,
-                             const geometry_msgs::msg::Point& point_b);
+  void parameters_handle(const rcl_interfaces::msg::Parameter& parameter);
+  void parameters_callback(rcl_interfaces::msg::ParameterEvent::UniquePtr event);
   void update_distance_to_begin(const geometry_msgs::msg::Point& point_begin,
                                 const geometry_msgs::msg::Point& point_end);
   void update_distance_to_finish(const geometry_msgs::msg::Point& point_begin,
                                  const geometry_msgs::msg::Point& point_end);
+  bool is_terminate_goal(const uint64_t feedback_status);
   bool current_goal_reached(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
                             const geometry_msgs::msg::Point& point_end);
-  bool is_terminate_goal(const uint64_t feedback_status);
+  void compute_error_on_line(nav_msgs::msg::Odometry& msg, const geometry_msgs::msg::Point& point_a,
+                             const geometry_msgs::msg::Point& point_b);
   void execute_callback();
+  bool compute_command(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
+                       const geometry_msgs::msg::Point& point_end);
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
   void update_goal_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
-  void reset_dynamic_point_callback(const std_msgs::msg::Bool::SharedPtr msg);
-  void parameters_handle(const rcl_interfaces::msg::Parameter& parameter);
-  void parameters_callback(rcl_interfaces::msg::ParameterEvent::UniquePtr event);
+  void reset_dynamic_goal_callback(const std_msgs::msg::Bool::SharedPtr msg);
 
 private:
   std::string server_name_{ "line_matcher" };
@@ -67,6 +67,7 @@ private:
   double control_looprate_{ 10. };
   double zone_precision_multiplier_{ 0.7 };
   double lateral_deviation_max_{ 0.4 };
+  double lateral_deviation_max_uturn_{ 1.5 };
   double course_deviation_max_{ M_PI / 8 };
   double zone_precision_{ 0.3 };
   double distance_to_end_{ 0. };
@@ -74,6 +75,8 @@ private:
   double lateral_deviation_{ 0. };
   double course_deviation_{ 0. };
   double actual_course_{ 0. };
+  double cut_line_overshoot_{ 0.05 };
+  double cut_line_initial_sign_{ 0. };
 
   std::mutex mutex_;
   rclcpp::Clock clock_;
@@ -88,7 +91,7 @@ private:
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_update_goal_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reset_dynamic_point_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reset_dynamic_goal_sub_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
 };
 }  // namespace nav_line_matcher
