@@ -24,20 +24,40 @@ LNI::CallbackReturn LineMatcherServer::on_configure(const rclcpp_lifecycle::Stat
   this->get_parameter("control_looprate", control_looprate_);
   this->get_parameter("zone_precision_multiplier", zone_precision_multiplier_);
 
-  parameters_client_ = std::make_shared<rclcpp::AsyncParametersClient>(this, "/auto/arbitration");
-  parameter_event_sub_ =
-      parameters_client_->on_parameter_event(std::bind(&LineMatcherServer::parameters_callback, this, _1));
+  std::string parameters_server = "/auto/arbitration";
+
+  parameters_client_ = std::make_shared<nav_util::ParametersClient>(shared_from_this(), parameters_server);
 
   if (!parameters_client_->wait_for_service(1s))
   {
-    RCLCPP_ERROR(this->get_logger(), "Parameters server /auto/arbitration not available");
+    RCLCPP_ERROR_STREAM(this->get_logger(), "Parameters server " << parameters_server << " not available");
     return LNI::CallbackReturn::FAILURE;
   }
+
+  std::vector<std::string> params_names{ "lateral_deviation_max", "lateral_deviation_max.uturn",
+                                         "course_deviation_max" };
+
+  auto params = parameters_client_->get_parameters(params_names);
+
+  if (params.size() == params_names.size())
+  {
+    for (auto p : params)
+    {
+      parameters_handle(p);
+    }
+  }
+  else
+  {
+    RCLCPP_ERROR_STREAM(get_logger(), "Param from " << parameters_server << " cannot been get");
+    return LNI::CallbackReturn::FAILURE;
+  }
+
+  parameters_client_->set_parameter_event_callback(std::bind(&LineMatcherServer::parameters_callback, this, _1));
 
   odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
 
   action_server_ = std::make_unique<nav2_util::SimpleActionServer<LineMatcherAction>>(
-      this, server_name_, std::bind(&LineMatcherServer::execute_callback, this), nullptr,
+      shared_from_this(), server_name_, std::bind(&LineMatcherServer::execute_callback, this), nullptr,
       std::chrono::milliseconds(500), true);
 
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
@@ -72,10 +92,7 @@ LNI::CallbackReturn LineMatcherServer::on_cleanup(const rclcpp_lifecycle::State&
 {
   action_server_->deactivate();
   action_server_.reset();
-
   parameters_client_.reset();
-  parameter_event_sub_.reset();
-
   odom_pub_.reset();
   odom_sub_.reset();
   odom_update_goal_sub_.reset();
@@ -87,10 +104,7 @@ LNI::CallbackReturn LineMatcherServer::on_cleanup(const rclcpp_lifecycle::State&
 LNI::CallbackReturn LineMatcherServer::on_shutdown(const rclcpp_lifecycle::State&)
 {
   action_server_.reset();
-
   parameters_client_.reset();
-  parameter_event_sub_.reset();
-
   odom_pub_.reset();
   odom_sub_.reset();
   odom_update_goal_sub_.reset();
@@ -99,33 +113,28 @@ LNI::CallbackReturn LineMatcherServer::on_shutdown(const rclcpp_lifecycle::State
   return LNI::CallbackReturn::SUCCESS;
 }
 
-void LineMatcherServer::parameters_handle(const rcl_interfaces::msg::Parameter& parameter)
+void LineMatcherServer::parameters_handle(const rclcpp::Parameter& p)
 {
-  if (parameter.name == "lateral_deviation_max")
+  if (p.get_name() == "lateral_deviation_max")
   {
-    lateral_deviation_max_ = parameter.value.double_value;
+    lateral_deviation_max_ = p.as_double();
     zone_precision_ = lateral_deviation_max_ * zone_precision_multiplier_;
   }
-  else if (parameter.name == "lateral_deviation_max.uturn")
+  else if (p.get_name() == "lateral_deviation_max.uturn")
   {
-    lateral_deviation_max_uturn_ = parameter.value.double_value;
+    lateral_deviation_max_uturn_ = p.as_double();
   }
-  else if (parameter.name == "course_deviation_max")
+  else if (p.get_name() == "course_deviation_max")
   {
-    course_deviation_max_ = parameter.value.double_value;
+    course_deviation_max_ = p.as_double();
   }
 }
 
 void LineMatcherServer::parameters_callback(rcl_interfaces::msg::ParameterEvent::UniquePtr event)
 {
-  for (auto& new_parameter : event->new_parameters)
+  for (const auto& changed_parameter : event->changed_parameters)
   {
-    parameters_handle(new_parameter);
-  }
-
-  for (auto& changed_parameter : event->changed_parameters)
-  {
-    parameters_handle(changed_parameter);
+    parameters_handle(rclcpp::Parameter::from_parameter_msg(changed_parameter));
   }
 }
 

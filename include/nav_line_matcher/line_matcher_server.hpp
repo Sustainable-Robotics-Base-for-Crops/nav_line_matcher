@@ -6,11 +6,12 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "nav2_util/simple_action_server.hpp"
+#include "nav_util/parameters_client.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "nav_interfaces/action/line_matcher.hpp"
-#include "nav2_util/simple_action_server.hpp"
 
 using LNI = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface;
 using LineMatcherAction = nav_interfaces::action::LineMatcher;
@@ -43,7 +44,7 @@ public:
   LNI::CallbackReturn on_shutdown(const rclcpp_lifecycle::State& state) override;
 
 protected:
-  void parameters_handle(const rcl_interfaces::msg::Parameter& parameter);
+  void parameters_handle(const rclcpp::Parameter& p);
   void parameters_callback(rcl_interfaces::msg::ParameterEvent::UniquePtr event);
   void update_distance_to_begin(const geometry_msgs::msg::Point& point_begin,
                                 const geometry_msgs::msg::Point& point_end);
@@ -85,8 +86,7 @@ private:
   geometry_msgs::msg::Point actual_position_;
   geometry_msgs::msg::Point dynamic_point_end_;
 
-  rclcpp::AsyncParametersClient::SharedPtr parameters_client_;
-  rclcpp::Subscription<rcl_interfaces::msg::ParameterEvent>::SharedPtr parameter_event_sub_;
+  std::shared_ptr<nav_util::ParametersClient> parameters_client_;
   std::unique_ptr<nav2_util::SimpleActionServer<LineMatcherAction>> action_server_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
