@@ -66,7 +66,7 @@ On excessive lateral or course error, the server sets the corresponding `error_l
 
 ### Remote parameters (`/auto/arbitration`)
 
-Loaded at configure time via `AsyncParametersClient`; updates are applied on parameter events.
+Loaded at configure time from `/auto/arbitration`; updates are applied on parameter events.
 
 | Parameter                     | Default (header) | Description                                    |
 | ----------------------------- | ---------------- | ---------------------------------------------- |
