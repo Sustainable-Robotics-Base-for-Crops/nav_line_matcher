@@ -1,8 +1,8 @@
 # nav_line_matcher
 
-Lifecycle node that drives a robot along a straight line between two points. It exposes the `line_matcher` action server, tracks lateral and course error against that segment, and publishes a repurposed `odom` message for [`nav_path_follow`](../nav_path_follow/README.md).
+Lifecycle node that drives a robot along a straight line between two points. It exposes the `line_matcher` action server, tracks lateral and course error against that segment, and publishes a repurposed `odom` message for `nav_path_follow`.
 
-During mission replay, [`nav_replay`](../nav_replay/README.md) sends `LineMatcher` goals to this node for the straight portions of a `mission_order` file: sections with `section_type: row_line` (crop rows) or `turn_square` (U-turn legs). Each consecutive pair of points in one of these sections becomes one goal: `point_begin` is the previous waypoint, `point_end` the next.
+During mission replay, `nav_replay` sends `LineMatcher` goals to this node for the straight portions of a `mission_order` file: sections with `section_type: row_line` (crop rows) or `turn_square` (U-turn legs). Each consecutive pair of points in one of these sections becomes one goal: `point_begin` is the previous waypoint, `point_end` the next.
 
 Example: a `row_line` section with four points yields three segments:
 
