@@ -76,8 +76,6 @@ private:
   double lateral_deviation_{ 0. };
   double course_deviation_{ 0. };
   double actual_course_{ 0. };
-  double cut_line_overshoot_{ 0.05 };
-  double cut_line_initial_sign_{ 0. };
 
   std::mutex mutex_;
   rclcpp::Clock clock_;

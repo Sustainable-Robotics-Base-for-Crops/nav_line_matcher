@@ -26,8 +26,6 @@ On each control cycle (rate `control_looprate`):
 
 Goals can be **static** (`point_end` fixed in the goal) or **dynamic** (`is_dynamic`: end point updated live via `line_matcher/_action/update_goal`).
 
-When `end_on_cut_line_cross` is set and `cut_line_a` ≠ `cut_line_b`, the goal also succeeds once the robot crosses the cut line (signed lateral deviation flips past `cut_line_overshoot`).
-
 A goal can be preempted. A new goal sent while one is running is accepted live (`accept_pending_goal`) and replaces the current target.
 
 On excessive lateral or course error, the server sets the corresponding `error_loc_path_*` status bit, stops publishing `odom`, and terminates the goal if still active.
@@ -40,16 +38,13 @@ Defined in `nav_interfaces/action/LineMatcher.action`.
 
 **Goal**
 
-| Field                   | Description                                                                                      |
-| ----------------------- | ------------------------------------------------------------------------------------------------ |
-| `point_begin`           | Start of the line segment                                                                        |
-| `point_end`             | End of the segment (static goals)                                                                |
-| `is_dynamic`            | If true, use `dynamic_point_end` updated by topic instead of `point_end`                         |
-| `is_working_zone`       | Per-segment working-zone flags. Index `0` is forwarded in feedback and `odom.twist.linear.z`     |
-| `is_uturn`              | If true, use `lateral_deviation_max.uturn` instead of `lateral_deviation_max` for error checking |
-| `cut_line_a`            | First point of the optional cut line (used when `end_on_cut_line_cross` is true)                 |
-| `cut_line_b`            | Second point of the optional cut line                                                            |
-| `end_on_cut_line_cross` | If true, succeed when the robot crosses `[cut_line_a, cut_line_b]`                               |
+| Field             | Description                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| `point_begin`     | Start of the line segment                                                                        |
+| `point_end`       | End of the segment (static goals)                                                                |
+| `is_dynamic`      | If true, use `dynamic_point_end` updated by topic instead of `point_end`                         |
+| `is_working_zone` | Per-segment working-zone flags. Index `0` is forwarded in feedback and `odom.twist.linear.z`     |
+| `is_uturn`        | If true, use `lateral_deviation_max.uturn` instead of `lateral_deviation_max` for error checking |
 
 **Result**
 
@@ -79,8 +74,6 @@ Defined in `nav_interfaces/action/LineMatcher.action`.
 | `zone_precision_multiplier` | `0.7`   | End-of-line tolerance factor |
 
 End-of-segment distance threshold: `zone_precision = lateral_deviation_max × zone_precision_multiplier`.
-
-Cut-line crossing overshoot: `cut_line_overshoot = 0.05` m (hardcoded in the server).
 
 ### Remote parameters (`/auto/arbitration`)
 

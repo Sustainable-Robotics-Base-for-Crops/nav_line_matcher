@@ -255,15 +255,6 @@ bool LineMatcherServer::current_goal_reached(const std::shared_ptr<const LineMat
 {
   update_distance_to_finish(goal->point_begin, point_end);
 
-  if (goal->end_on_cut_line_cross && !nav_util::is_same_point(goal->cut_line_a, goal->cut_line_b))
-  {
-    double signed_dev = nav_util::get_lateral_deviation_to_line(actual_position_, goal->cut_line_a, goal->cut_line_b);
-    if (cut_line_initial_sign_ != 0. && signed_dev * cut_line_initial_sign_ <= -cut_line_overshoot_)
-    {
-      return true;
-    }
-  }
-
   // Check if close to end or loc goes beyond the end
   if (distance_to_end_ < zone_precision_ ||
       nav_util::is_end_segment_exceeded(actual_position_, goal->point_begin, point_end))
@@ -303,14 +294,6 @@ void LineMatcherServer::execute_callback()
   RCLCPP_INFO(this->get_logger(), "Execute goal...");
   std::shared_ptr<const LineMatcherAction::Goal> goal = action_server_->get_current_goal();
   std::shared_ptr<LineMatcherAction::Result> result = std::make_shared<LineMatcherAction::Result>();
-
-  cut_line_initial_sign_ = 0.;
-  if (goal->end_on_cut_line_cross && !nav_util::is_same_point(goal->cut_line_a, goal->cut_line_b))
-  {
-    std::scoped_lock<std::mutex> lock(mutex_);
-    double signed_dev = nav_util::get_lateral_deviation_to_line(actual_position_, goal->cut_line_a, goal->cut_line_b);
-    cut_line_initial_sign_ = (signed_dev >= 0.) ? 1. : -1.;
-  }
 
   try
   {
