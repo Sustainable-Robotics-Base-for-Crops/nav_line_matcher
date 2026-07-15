@@ -1,6 +1,17 @@
 # nav_line_matcher
 
-Lifecycle node that drives a robot along a straight line segment. It exposes the `line_matcher` action server, tracks lateral and course error against the segment, and publishes a repurposed `odom` message for [`nav_path_follow`](../nav_path_follow/README.md). [`nav_replay`](../nav_replay/README.md) sends `LineMatcher` goals for straight mission segments.
+Lifecycle node that drives a robot along a straight line between two points. It exposes the `line_matcher` action server, tracks lateral and course error against that segment, and publishes a repurposed `odom` message for [`nav_path_follow`](../nav_path_follow/README.md).
+
+During mission replay, [`nav_replay`](../nav_replay/README.md) sends `LineMatcher` goals to this node for the straight portions of a `mission_order` file: sections with `section_type: row_line` (crop rows) or `turn_square` (U-turn legs). Each consecutive pair of points in one of these sections becomes one goal: `point_begin` is the previous waypoint, `point_end` the next.
+
+Example: a `row_line` section with four points yields three segments:
+
+```
+A ──────► B ──────► C ──────► D
+   seg 1      seg 2      seg 3
+```
+
+Curved sections (`section_type: row_path` or `turn_path`) are handled by `nav_path_matcher` via the `PathMatcher` action instead.
 
 ## Overview
 
@@ -20,6 +31,8 @@ When `end_on_cut_line_cross` is set and `cut_line_a` ≠ `cut_line_b`, the goal 
 A goal can be preempted. A new goal sent while one is running is accepted live (`accept_pending_goal`) and replaces the current target.
 
 On excessive lateral or course error, the server sets the corresponding `error_loc_path_*` status bit, stops publishing `odom`, and terminates the goal if still active.
+
+![line_matcher](img/line_matcher.png)
 
 ## Action interface
 
