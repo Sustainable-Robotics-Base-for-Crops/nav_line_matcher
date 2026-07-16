@@ -8,7 +8,6 @@
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "nav2_util/simple_action_server.hpp"
 #include "nav_util/parameters_client.hpp"
-#include "std_msgs/msg/bool.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "nav_interfaces/action/line_matcher.hpp"
@@ -51,16 +50,12 @@ protected:
   void update_distance_to_finish(const geometry_msgs::msg::Point& point_begin,
                                  const geometry_msgs::msg::Point& point_end);
   bool is_terminate_goal(const uint64_t feedback_status);
-  bool current_goal_reached(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
-                            const geometry_msgs::msg::Point& point_end);
+  bool current_goal_reached(const std::shared_ptr<const LineMatcherAction::Goal>& goal);
   void compute_error_on_line(nav_msgs::msg::Odometry& msg, const geometry_msgs::msg::Point& point_a,
                              const geometry_msgs::msg::Point& point_b);
   void execute_callback();
-  bool compute_command(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
-                       const geometry_msgs::msg::Point& point_end);
+  bool compute_command(const std::shared_ptr<const LineMatcherAction::Goal>& goal);
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
-  void update_goal_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
-  void reset_dynamic_goal_callback(const std_msgs::msg::Bool::SharedPtr msg);
 
 private:
   std::string server_name_{ "line_matcher" };
@@ -82,14 +77,11 @@ private:
 
   nav_msgs::msg::Odometry current_odom_;
   geometry_msgs::msg::Point actual_position_;
-  geometry_msgs::msg::Point dynamic_point_end_;
 
   std::shared_ptr<nav_util::ParametersClient> parameters_client_;
   std::unique_ptr<nav2_util::SimpleActionServer<LineMatcherAction>> action_server_;
 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_update_goal_sub_;
-  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr reset_dynamic_goal_sub_;
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
 };
 }  // namespace nav_line_matcher

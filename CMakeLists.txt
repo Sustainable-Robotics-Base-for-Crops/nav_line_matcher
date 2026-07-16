@@ -16,7 +16,6 @@ set(dependencies
   rclcpp_lifecycle
   nav2_util
   nav_util
-  std_msgs
   nav_msgs
   geometry_msgs
   lifecycle_msgs

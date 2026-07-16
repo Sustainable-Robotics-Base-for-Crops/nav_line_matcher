@@ -63,14 +63,6 @@ LNI::CallbackReturn LineMatcherServer::on_configure(const rclcpp_lifecycle::Stat
   odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
       "/loc/odom", 10, std::bind(&LineMatcherServer::odom_callback, this, _1));
 
-  odom_update_goal_sub_ =
-      this->create_subscription<nav_msgs::msg::Odometry>(server_name_ + "/_action/update_goal", rclcpp::QoS(1),
-                                                         std::bind(&LineMatcherServer::update_goal_callback, this, _1));
-
-  reset_dynamic_goal_sub_ = this->create_subscription<std_msgs::msg::Bool>(
-      server_name_ + "/_action/reset_dynamic_goal", rclcpp::QoS(1),
-      std::bind(&LineMatcherServer::reset_dynamic_goal_callback, this, _1));
-
   action_server_->activate();
 
   return LNI::CallbackReturn::SUCCESS;
@@ -95,8 +87,6 @@ LNI::CallbackReturn LineMatcherServer::on_cleanup(const rclcpp_lifecycle::State&
   parameters_client_.reset();
   odom_pub_.reset();
   odom_sub_.reset();
-  odom_update_goal_sub_.reset();
-  reset_dynamic_goal_sub_.reset();
 
   return LNI::CallbackReturn::SUCCESS;
 }
@@ -107,8 +97,6 @@ LNI::CallbackReturn LineMatcherServer::on_shutdown(const rclcpp_lifecycle::State
   parameters_client_.reset();
   odom_pub_.reset();
   odom_sub_.reset();
-  odom_update_goal_sub_.reset();
-  reset_dynamic_goal_sub_.reset();
 
   return LNI::CallbackReturn::SUCCESS;
 }
@@ -138,8 +126,7 @@ void LineMatcherServer::parameters_callback(rcl_interfaces::msg::ParameterEvent:
   }
 }
 
-bool LineMatcherServer::compute_command(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
-                                        const geometry_msgs::msg::Point& point_end)
+bool LineMatcherServer::compute_command(const std::shared_ptr<const LineMatcherAction::Goal>& goal)
 {
   nav_msgs::msg::Odometry odom_msg;
   std::shared_ptr<LineMatcherAction::Feedback> feedback = std::make_shared<LineMatcherAction::Feedback>();
@@ -150,9 +137,9 @@ bool LineMatcherServer::compute_command(const std::shared_ptr<const LineMatcherA
   odom_msg.twist.twist.angular.z =
       current_odom_.twist.twist.angular.z;  // Angular speed of the robot, used only in predictive control
 
-  update_distance_to_finish(goal->point_begin, point_end);
-  update_distance_to_begin(goal->point_begin, point_end);
-  compute_error_on_line(odom_msg, goal->point_begin, point_end);
+  update_distance_to_finish(goal->point_begin, goal->point_end);
+  update_distance_to_begin(goal->point_begin, goal->point_end);
+  compute_error_on_line(odom_msg, goal->point_begin, goal->point_end);
 
   if (!goal->is_working_zone.empty())
   {
@@ -250,14 +237,13 @@ bool LineMatcherServer::is_terminate_goal(const uint64_t feedback_status)
   return false;
 }
 
-bool LineMatcherServer::current_goal_reached(const std::shared_ptr<const LineMatcherAction::Goal>& goal,
-                                             const geometry_msgs::msg::Point& point_end)
+bool LineMatcherServer::current_goal_reached(const std::shared_ptr<const LineMatcherAction::Goal>& goal)
 {
-  update_distance_to_finish(goal->point_begin, point_end);
+  update_distance_to_finish(goal->point_begin, goal->point_end);
 
   // Check if close to end or loc goes beyond the end
   if (distance_to_end_ < zone_precision_ ||
-      nav_util::is_end_segment_exceeded(actual_position_, goal->point_begin, point_end))
+      nav_util::is_end_segment_exceeded(actual_position_, goal->point_begin, goal->point_end))
   {
     return true;
   }
@@ -272,21 +258,6 @@ void LineMatcherServer::odom_callback(const nav_msgs::msg::Odometry::SharedPtr m
   actual_position_.x = msg->pose.pose.position.x;
   actual_position_.y = msg->pose.pose.position.y;
   nav_util::quaternion_to_yaw(msg->pose.pose.orientation, actual_course_);
-}
-
-void LineMatcherServer::update_goal_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
-{
-  std::scoped_lock<std::mutex> lock(mutex_);
-  dynamic_point_end_ = msg->pose.pose.position;
-}
-
-void LineMatcherServer::reset_dynamic_goal_callback(const std_msgs::msg::Bool::SharedPtr msg)
-{
-  if (msg->data == true)
-  {
-    std::scoped_lock<std::mutex> lock(mutex_);
-    dynamic_point_end_ = geometry_msgs::msg::Point();
-  }
 }
 
 void LineMatcherServer::execute_callback()
@@ -323,25 +294,14 @@ void LineMatcherServer::execute_callback()
       {
         std::scoped_lock<std::mutex> lock(mutex_);
 
-        if ((goal->is_dynamic && current_goal_reached(goal, dynamic_point_end_)) ||
-            (!goal->is_dynamic && current_goal_reached(goal, goal->point_end)))
+        if (current_goal_reached(goal))
         {
           RCLCPP_INFO(this->get_logger(), "Point reached");
           result->end_point_reached = true;
           break;
         }
 
-        bool result{ true };
-        if (goal->is_dynamic)
-        {
-          result = compute_command(goal, dynamic_point_end_);
-        }
-        else
-        {
-          result = compute_command(goal, goal->point_end);
-        }
-
-        if (result == false)
+        if (!compute_command(goal))
         {
           return;
         }

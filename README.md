@@ -11,17 +11,15 @@ Curved sections (`section_type: row_path` or `turn_path`) are handled by `nav_pa
 On each control cycle (rate `control_looprate`):
 
 1. Read robot pose from `/loc/odom`.
-2. Project the robot onto the line `[point_begin, point_end]` (or a dynamic end point).
+2. Project the robot onto the line `[point_begin, point_end]`.
 3. Compute lateral deviation, course deviation, and distances to segment ends.
 4. Publish action feedback (status, deviations, distances).
 5. If errors are within limits, publish `odom` for path following.
-6. Succeed when the segment end is reached (distance, segment overrun, or cut-line crossing).
-
-Goals can be **static** (`point_end` fixed in the goal) or **dynamic** (`is_dynamic`: end point updated live via `line_matcher/_action/update_goal`).
+6. Succeed when the segment end is reached: the projection on the segment is within `zone_precision` of `point_end`, or the robot has passed `point_end`.
 
 A goal can be preempted. A new goal sent while one is running is accepted live (`accept_pending_goal`) and replaces the current target.
 
-On excessive lateral or course error, the server sets the corresponding `error_loc_path_*` status bit, stops publishing `odom`, and terminates the goal if still active.
+On excessive lateral or course error, the server sets the corresponding `error_loc_path_*` status bit, stops publishing `odom`, and terminates the goal. The client must send a new goal to resume.
 
 ![line_matcher](img/line_matcher.png)
 
@@ -34,8 +32,7 @@ Defined in `nav_interfaces/action/LineMatcher.action`.
 | Field             | Description                                                                                      |
 | ----------------- | ------------------------------------------------------------------------------------------------ |
 | `point_begin`     | Start of the line segment                                                                        |
-| `point_end`       | End of the segment (static goals)                                                                |
-| `is_dynamic`      | If true, use `dynamic_point_end` updated by topic instead of `point_end`                         |
+| `point_end`       | End of the segment                                                                               |
 | `is_working_zone` | Per-segment working-zone flags. Index `0` is forwarded in feedback and `odom.twist.linear.z`     |
 | `is_uturn`        | If true, use `lateral_deviation_max.uturn` instead of `lateral_deviation_max` for error checking |
 
@@ -82,12 +79,10 @@ Configure fails if `/auto/arbitration` is not available.
 
 ## Topics
 
-| Topic                                     | Type                    | Direction | Description                                          |
-| ----------------------------------------- | ----------------------- | --------- | ---------------------------------------------------- |
-| `/loc/odom`                               | `nav_msgs/msg/Odometry` | In        | Robot pose and velocity                              |
-| `line_matcher/_action/update_goal`        | `nav_msgs/msg/Odometry` | In        | Dynamic segment end (`pose.pose.position`)           |
-| `line_matcher/_action/reset_dynamic_goal` | `std_msgs/msg/Bool`     | In        | Reset dynamic end to `(0, 0, 0)` when `data == true` |
-| `odom`                                    | `nav_msgs/msg/Odometry` | Out       | Path-tracking payload for `nav_path_follow`          |
+| Topic       | Type                    | Direction | Description                                 |
+| ----------- | ----------------------- | --------- | ------------------------------------------- |
+| `/loc/odom` | `nav_msgs/msg/Odometry` | In        | Robot pose and velocity                     |
+| `odom`      | `nav_msgs/msg/Odometry` | Out       | Path-tracking payload for `nav_path_follow` |
 
 Non-standard `odom` payload:
 
