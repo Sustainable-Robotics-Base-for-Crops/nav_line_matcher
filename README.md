@@ -4,13 +4,6 @@ Lifecycle node that drives a robot along a straight line between two points. It 
 
 During mission replay, `nav_replay` loads a JSON mission file in the Agri format (`file_type: mission_order`) and sends `LineMatcher` goals to this node for its straight portions: sections with `section_type: row_line` (crop rows) or `turn_square` (U-turn legs). Each consecutive pair of points in one of these sections becomes one goal: `point_begin` is the previous waypoint, `point_end` the next.
 
-Example: a `row_line` section with four points yields three segments:
-
-```
-A ──────► B ──────► C ──────► D
-   seg 1      seg 2      seg 3
-```
-
 Curved sections (`section_type: row_path` or `turn_path`) are handled by `nav_path_matcher` via the `PathMatcher` action instead.
 
 ## Overview
