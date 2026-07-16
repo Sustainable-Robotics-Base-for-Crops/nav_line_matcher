@@ -6,6 +6,8 @@ During mission replay, `nav_replay` loads a JSON mission file in the Agri format
 
 Curved sections (`section_type: row_path` or `turn_path`) are handled by `nav_path_matcher` via the `PathMatcher` action instead.
 
+![architecture](img/architecture.png)
+
 ## Overview
 
 On each control cycle (rate `control_looprate`):
