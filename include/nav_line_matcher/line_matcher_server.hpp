@@ -65,6 +65,7 @@ private:
   double lateral_deviation_max_{ 0.4 };
   double lateral_deviation_max_uturn_{ 1.5 };
   double course_deviation_max_{ M_PI / 8 };
+  double course_deviation_max_uturn_{ M_PI / 3 };
   double zone_precision_{ 0.3 };
   double distance_to_end_{ 0. };
   double distance_to_begin_{ 0. };

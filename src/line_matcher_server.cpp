@@ -34,8 +34,8 @@ LNI::CallbackReturn LineMatcherServer::on_configure(const rclcpp_lifecycle::Stat
     return LNI::CallbackReturn::FAILURE;
   }
 
-  std::vector<std::string> params_names{ "lateral_deviation_max", "lateral_deviation_max.uturn",
-                                         "course_deviation_max" };
+  std::vector<std::string> params_names{ "lateral_deviation_max", "lateral_deviation_max.uturn", "course_deviation_max",
+                                         "course_deviation_max.uturn" };
 
   auto params = parameters_client_->get_parameters(params_names);
 
@@ -116,6 +116,10 @@ void LineMatcherServer::parameters_handle(const rclcpp::Parameter& p)
   {
     course_deviation_max_ = p.as_double();
   }
+  else if (p.get_name() == "course_deviation_max.uturn")
+  {
+    course_deviation_max_uturn_ = p.as_double();
+  }
 }
 
 void LineMatcherServer::parameters_callback(rcl_interfaces::msg::ParameterEvent::UniquePtr event)
@@ -153,6 +157,7 @@ bool LineMatcherServer::compute_command(const std::shared_ptr<const LineMatcherA
   }
 
   const double active_lateral_deviation_max = goal->is_uturn ? lateral_deviation_max_uturn_ : lateral_deviation_max_;
+  const double active_course_deviation_max = goal->is_uturn ? course_deviation_max_uturn_ : course_deviation_max_;
   if (abs(lateral_deviation_) > active_lateral_deviation_max)
   {
     feedback->status |= uint64_t(nav_interfaces::AutoStatus::error_loc_path_lateral_deviation);
@@ -167,13 +172,14 @@ bool LineMatcherServer::compute_command(const std::shared_ptr<const LineMatcherA
       return false;
     }
   }
-  else if (abs(course_deviation_) > course_deviation_max_)
+  else if (abs(course_deviation_) > active_course_deviation_max)
   {
     feedback->status |= uint64_t(nav_interfaces::AutoStatus::error_loc_path_course_deviation);
 
     RCLCPP_INFO_STREAM_THROTTLE(this->get_logger(), clock_, 5000,
-                                "course deviation > course deviation max : abs(" << course_deviation_ << ") > "
-                                                                                 << course_deviation_max_);
+                                "course deviation > course deviation max : abs("
+                                    << course_deviation_ << ") > " << active_course_deviation_max
+                                    << (goal->is_uturn ? " (uturn threshold)" : ""));
 
     if (is_terminate_goal(feedback->status))
     {

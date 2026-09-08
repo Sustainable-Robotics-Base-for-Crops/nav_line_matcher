@@ -31,12 +31,12 @@ Defined in `nav_interfaces/action/LineMatcher.action`.
 
 **Goal**
 
-| Field             | Description                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------ |
-| `point_begin`     | Start of the line segment                                                                        |
-| `point_end`       | End of the segment                                                                               |
-| `is_working_zone` | Per-segment working-zone flags. Index `0` is forwarded in feedback and `odom.twist.linear.z`     |
-| `is_uturn`        | If true, use `lateral_deviation_max.uturn` instead of `lateral_deviation_max` for error checking |
+| Field             | Description                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------- |
+| `point_begin`     | Start of the line segment                                                                    |
+| `point_end`       | End of the segment                                                                           |
+| `is_working_zone` | Per-segment working-zone flags. Index `0` is forwarded in feedback and `odom.twist.linear.z` |
+| `is_uturn`        | If true, use the `.uturn` lateral and course deviation thresholds for error checking         |
 
 **Result**
 
@@ -76,6 +76,7 @@ Loaded at configure time from `/auto/arbitration`. Updates are applied on parame
 | `lateral_deviation_max`       | `0.4` (m)        | Max lateral deviation before error         |
 | `lateral_deviation_max.uturn` | `1.5` (m)        | Max lateral deviation when `goal.is_uturn` |
 | `course_deviation_max`        | `π/8` (rad)      | Max course deviation before error          |
+| `course_deviation_max.uturn`  | `π/3` (rad)      | Max course deviation when `goal.is_uturn`  |
 
 Configure fails if `/auto/arbitration` is not available.
 
